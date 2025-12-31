@@ -1,6 +1,15 @@
 # QuadroCopterEnv 🚁
 
-A custom Gymnasium environment for training autonomous quadcopter agents using reinforcement learning (PPO). The drone navigates through obstacles using LIDAR sensors to reach target locations.
+A custom Gymnasium environment for training autonomous quadcopter agents using reinforcement learning (PPO/SAC). The drone navigates through obstacles using LIDAR sensors to reach target locations.
+
+## Demo 🎬
+
+<div align="center">
+  <img src="images/demo.gif" alt="QuadroCopter Demo" width="600"/>
+  <p><i>Trained agent navigating through obstacles using LIDAR and reaching the target</i></p>
+</div>
+
+*Features visible in demo: LIDAR rays with distance-based colors, direction arrow to target, velocity vector, collision warnings, fuel bar, and real-time statistics.*
 
 ## Features ✨
 
@@ -30,12 +39,15 @@ QuadroCopterEnv/
 │   ├── test_sac.py       # SAC model testing with visualization
 │   ├── compare_models.py # PPO vs SAC comparison
 │   ├── analyze_model.py  # Model performance analysis
+│   ├── record_demo.py    # Demo GIF recorder
 │   └── test_random.py    # Random action testing
 ├── images/
 │   ├── quadro_copter.png # Drone sprite
-│   └── target.png        # Target sprite
+│   ├── target.png        # Target sprite
+│   └── demo.gif          # Demo GIF (generated)
 ├── models/
-│   └── PPO/              # Saved models directory
+│   ├── PPO/              # Saved PPO models
+│   └── SAC/              # Saved SAC models
 ├── README.md             # Documentation
 └── requirements.txt      # Python dependencies
 ```
@@ -122,6 +134,20 @@ Check detailed statistics for a specific model:
 ```bash
 python scripts/analyze_model.py
 ```
+
+### 5. Record Demo GIF
+
+Create a demo GIF for your README or documentation:
+
+```bash
+python scripts/record_demo.py
+```
+
+This interactive script will:
+- Let you choose PPO or SAC model
+- Select difficulty level (1-4 obstacles)
+- Choose number of episodes to record
+- Save optimized GIF to `images/demo.gif`
 
 ## Environment Details 🎮
 

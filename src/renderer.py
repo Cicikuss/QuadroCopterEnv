@@ -73,8 +73,9 @@ class Renderer:
         debug_mode: bool = False,
         agent_half_size: float = 0.25,
         current_reward: float = 0.0,
-        episode_terminated: bool = False
-    ) -> None:
+        episode_terminated: bool = False,
+        return_rgb_array: bool = False
+    ):
         """Render the environment.
         
         Args:
@@ -162,11 +163,20 @@ class Renderer:
             self.current_episode_steps = 0
             self.current_episode_reward = 0.0
         
-        # Update display
-        self.window.blit(canvas, (0, 0))
-        pygame.event.pump()
-        pygame.display.update()
-        self.clock.tick(self.metadata["render_fps"])
+        # Return RGB array if requested, otherwise update display
+        if return_rgb_array:
+            # Convert pygame surface to numpy array
+            return np.transpose(
+                np.array(pygame.surfarray.pixels3d(canvas)), 
+                axes=(1, 0, 2)
+            ).copy()
+        else:
+            # Update display for human rendering
+            self.window.blit(canvas, (0, 0))
+            pygame.event.pump()
+            pygame.display.update()
+            self.clock.tick(self.metadata["render_fps"])
+            return None
     
     def _draw_obstacles(self, canvas: pygame.Surface, obstacles: List[np.ndarray]) -> None:
         """Draw obstacles on canvas."""

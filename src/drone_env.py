@@ -42,9 +42,9 @@ class QuadroCopterEnv(gym.Env):
         self.smooth_action = np.array([0, 0], dtype=np.float32)
         self.alpha = 0.5  # Smoothing factor (0.5 = equal blend of old and new)
         
-        # Initialize renderer only if needed
+        # Initialize renderer if needed
         self.renderer = None
-        if render_mode == "human":
+        if render_mode in ["human", "rgb_array"]:
             self.renderer = Renderer(self.window_size, self.scale_factor, self.metadata)
         self.trail = []
         self._setup_spaces()
@@ -424,10 +424,14 @@ class QuadroCopterEnv(gym.Env):
         
         return self._get_obs(), reward, terminated, truncated, self._get_info()
 
-    def render(self) -> None:
-        """Render the environment using the Renderer class."""
-        if self.render_mode != "human" or self.renderer is None:
-            return
+    def render(self):
+        """Render the environment using the Renderer class.
+        
+        Returns:
+            np.ndarray: RGB array if render_mode='rgb_array', None otherwise
+        """
+        if self.render_mode not in ["human", "rgb_array"] or self.renderer is None:
+            return None
         
         # Get LIDAR scan points
         lidar_points = []
@@ -435,7 +439,7 @@ class QuadroCopterEnv(gym.Env):
             lidar_points = self.lidar.last_scan_points or []
         
         # Delegate rendering to Renderer
-        self.renderer.render(
+        return self.renderer.render(
             agent_location=self._agent_location,
             target_location=self._target_location,
             obstacles=self.obstacles,
@@ -448,7 +452,8 @@ class QuadroCopterEnv(gym.Env):
             debug_mode=self.debug_mode,
             agent_half_size=self.AGENT_HALF_SIZE,
             current_reward=self.last_reward,
-            episode_terminated=False
+            episode_terminated=False,
+            return_rgb_array=(self.render_mode == "rgb_array")
         )
     
     def close(self) -> None:
