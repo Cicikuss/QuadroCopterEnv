@@ -20,6 +20,7 @@ class QuadroCopterEnv(gym.Env):
     STEP_PENALTY = -0.05  # Small penalty per step to encourage efficiency
     FUEL_PENALTY = -0.1  # Penalty for running out of fuel
     
+    
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 30}
 
     def __init__(self, size: int = 5, render_mode: Optional[str] = None, debug_mode: bool = False) -> None:
@@ -34,6 +35,7 @@ class QuadroCopterEnv(gym.Env):
         self.latest_action = np.array([0, 0], dtype=np.float32)
         self._agent_location = np.array([-1, -1], dtype=np.float32)
         self._target_location = np.array([-1, -1], dtype=np.float32)
+        self.difficulty = 0.25  # Start at 25% (1 obstacle) 
         
         # Initialize renderer only if needed
         self.renderer = None
@@ -46,8 +48,11 @@ class QuadroCopterEnv(gym.Env):
         """Generate random obstacles that don't overlap with agent or target."""
         obstacles = []
         max_attempts = 100
-        
-        for _ in range(self.NUM_OBSTACLES):
+        current_num_obstacles = int(self.NUM_OBSTACLES * self.difficulty)
+        if current_num_obstacles == 0:
+            return []
+            
+        for _ in range(current_num_obstacles):
             attempts = 0
             while attempts < max_attempts:
                 x = self.np_random.uniform(0, self.size - self.OBSTACLE_SIZE_MAX)
@@ -77,6 +82,10 @@ class QuadroCopterEnv(gym.Env):
                 attempts += 1
         
         return obstacles
+    def set_difficulty(self, level: int) -> None:
+        """Set difficulty level which affects number of obstacles."""
+        self.difficulty = np.clip(level, 0.0, 1.0)
+        print(f"🔧 Difficulty set to {self.difficulty:.2f}")
     
     def _point_in_obstacle(self, point: np.ndarray, obstacle: np.ndarray) -> bool:
         """Check if a point is inside an obstacle (with margin)."""

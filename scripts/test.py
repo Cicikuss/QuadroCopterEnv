@@ -19,11 +19,12 @@ def test():
     env = gym.make("QuadroCopterEnv-v0", size=5, render_mode="human")
 
     # 3. Eğitilmiş Modeli Yükle
-    model_path = "models/PPO/drone_pilot_final"
+    model_path = "models/PPO/drone_pilot_curriculum"
     try:
         model = PPO.load(model_path, env=env)
     except FileNotFoundError:
         print("❌ Model dosyası bulunamadı! Önce train.py'yi çalıştır.")
+        print("   Aranılan: models/PPO/drone_pilot_curriculum.zip")
         return
 
     # 4. Simülasyon Döngüsü
