@@ -1,3 +1,7 @@
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 import gymnasium as gym
 from stable_baselines3 import PPO
 from gymnasium.wrappers import TimeLimit
