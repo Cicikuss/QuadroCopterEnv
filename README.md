@@ -7,6 +7,7 @@ A custom Gymnasium environment for training autonomous quadcopter agents using r
 - **Custom Gymnasium Environment**: Built from scratch following OpenAI Gym standards
 - **LIDAR Sensor System**: 16-ray LIDAR for obstacle detection (360° coverage)
 - **Curriculum Learning**: Progressive difficulty - starts easy, gradually increases obstacles
+- **Multiple RL Algorithms**: Train with PPO or SAC, compare performance
 - **Action Smoothing**: Momentum-based continuous action space for realistic drone physics
 - **Intelligent Pathfinding**: BFS-based validation ensures target is always reachable
 - **Dynamic Fuel Management**: Fuel consumption based on movement speed
@@ -23,8 +24,11 @@ QuadroCopterEnv/
 │   ├── lidar.py          # LIDAR sensor implementation
 │   └── renderer.py       # Rendering pipeline
 ├── scripts/
-│   ├── train.py          # Training script (PPO)
-│   ├── test.py           # Model testing with visualization
+│   ├── train.py          # PPO training script
+│   ├── train_sac.py      # SAC training script  
+│   ├── test.py           # PPO model testing with visualization
+│   ├── test_sac.py       # SAC model testing with visualization
+│   ├── compare_models.py # PPO vs SAC comparison
 │   ├── analyze_model.py  # Model performance analysis
 │   └── test_random.py    # Random action testing
 ├── images/
@@ -64,16 +68,24 @@ cd QuadroCopterEnv
 
 ### 1. Train the Agent
 
-Train a new model using **curriculum learning** (gradually increasing difficulty):
+Train using **PPO** (recommended for beginners) or **SAC** (better for continuous control):
 
+**PPO Training:**
 ```bash
 python scripts/train.py
+```
+
+**SAC Training:**
+```bash
+python scripts/train_sac.py
 ```
 
 Training parameters:
 - **Total timesteps**: 500,000
 - **Max episode steps**: 300
-- **Algorithm**: PPO (Proximal Policy Optimization)
+- **Algorithms**: 
+  - **PPO**: On-policy, stable, good for general tasks
+  - **SAC**: Off-policy, entropy-regularized, excellent for continuous control
 - **Policy**: MultiInputPolicy (handles Dict observation space)
 - **Curriculum**: Starts at 25% difficulty (1 obstacle), increases every 50k steps to 100% (4 obstacles)
 
@@ -81,15 +93,31 @@ Training parameters:
 
 Watch the trained agent navigate:
 
+**Test PPO:**
 ```bash
 python scripts/test.py
 ```
 
-This will load the trained model and visualize the drone's behavior in real-time.
+**Test SAC:**
+```bash
+python scripts/test_sac.py
+```
 
-### 3. Analyze Performance
+Both scripts allow difficulty selection (1-4 obstacles) to test different scenarios.
 
-Check detailed statistics:
+### 3. Compare Models
+
+Compare PPO vs SAC performance across different difficulty levels:
+
+```bash
+python scripts/compare_models.py
+```
+
+This evaluates both models on 50 episodes at each difficulty level and provides detailed statistics.
+
+### 4. Analyze Performance
+
+Check detailed statistics for a specific model:
 
 ```bash
 python scripts/analyze_model.py
@@ -144,6 +172,27 @@ ACTION_SMOOTHING_ALPHA = 0.5        # Momentum blending factor
 ```
 
 ## Key Features Explained 🔍
+
+### PPO vs SAC 🤖
+
+**PPO (Proximal Policy Optimization)**:
+- ✅ **On-policy**: Learns from current policy only
+- ✅ **Stable**: Clipped updates prevent large policy changes
+- ✅ **Sample efficient**: Good for real-time learning
+- ✅ **Best for**: General-purpose tasks, when stability matters
+- ⚠️ Slower convergence on continuous control
+
+**SAC (Soft Actor-Critic)**:
+- ✅ **Off-policy**: Learns from replay buffer (past experiences)
+- ✅ **Entropy regularization**: Encourages exploration
+- ✅ **Sample efficient**: Reuses past data effectively
+- ✅ **Best for**: Continuous action spaces, complex control
+- ⚠️ More hyperparameters to tune
+
+**Which to choose?**
+- 🟢 **PPO**: Start here for simplicity and stability
+- 🔵 **SAC**: Use for better final performance on continuous control tasks
+- 🏆 **Compare**: Run `compare_models.py` to see which works better for your scenario
 
 ### Curriculum Learning 🎓
 

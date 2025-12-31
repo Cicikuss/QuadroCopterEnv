@@ -1,0 +1,110 @@
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+import gymnasium as gym
+from stable_baselines3 import SAC
+from stable_baselines3.common.callbacks import BaseCallback
+from gymnasium.wrappers import TimeLimit
+from src.drone_env import QuadroCopterEnv
+import os
+
+# Register environment
+gym.register(
+    id="QuadroCopterEnv-v0",
+    entry_point="src.drone_env:QuadroCopterEnv",
+)
+
+class CurriculumCallback(BaseCallback):
+    def __init__(self, verbose=0):
+        super().__init__(verbose)
+        self.current_difficulty = 0.25  # Start with 25% difficulty (1 obstacle)
+        self.difficulty_step = 0.1  # Increase by 10% each time
+        self.upgrade_freq = 50_000  # Every 50k steps
+
+    def _on_step(self) -> bool:
+        # Check if it's time to increase difficulty
+        if self.num_timesteps % self.upgrade_freq == 0 and self.num_timesteps > 0:
+            # Increase difficulty
+            self.current_difficulty += self.difficulty_step
+            self.current_difficulty = min(1.0, self.current_difficulty)
+            
+            # Update environment difficulty
+            self.training_env.env_method("set_difficulty", self.current_difficulty)
+            
+            if self.verbose > 0:
+                print(f"🎓 LEVEL UP! Zorluk Seviyesi: {self.current_difficulty:.1f}")
+                print(f"   (Adım: {self.num_timesteps})")
+                
+        return True
+
+# --- SAC EĞİTİM ---
+def train():
+    print("🚀 SAC (Soft Actor-Critic) Eğitimi Başlıyor...")
+    print("📚 SAC: Off-policy, entropy-regularized algorithm")
+    print("🎯 Continuous action spaces için optimize edilmiş")
+    print("📊 Başlangıç zorluğu: 0.25 (1 engel)")
+    print("📈 Her 50k adımda +0.1 artacak")
+    print("="*50)
+    
+    # Create environment with TimeLimit wrapper
+    env = gym.make("QuadroCopterEnv-v0", size=5, render_mode=None)
+    env = TimeLimit(env, max_episode_steps=300)
+    
+    # Set initial difficulty to 0.25 (1 obstacle out of 4)
+    env.unwrapped.set_difficulty(0.25)
+    
+    # Create curriculum callback
+    curriculum_callback = CurriculumCallback(verbose=1)
+    
+    # Create model directory
+    models_dir = os.path.join(os.path.dirname(__file__), "../models/SAC")
+    os.makedirs(models_dir, exist_ok=True)
+    
+    # SAC Model with optimized hyperparameters for continuous control
+    print("\n🔧 SAC Model Parametreleri:")
+    print("  - Buffer size: 100,000")
+    print("  - Learning rate: 3e-4")
+    print("  - Batch size: 256")
+    print("  - Tau: 0.005 (soft update)")
+    print("  - Gamma: 0.99 (discount factor)")
+    print("  - Entropy coefficient: auto (adaptive)")
+    print()
+    
+    model = SAC(
+        "MultiInputPolicy",
+        env,
+        verbose=1,
+        learning_rate=3e-4,
+        buffer_size=100_000,  # Replay buffer size
+        learning_starts=1000,  # Start learning after 1000 steps
+        batch_size=256,
+        tau=0.005,  # Soft update coefficient
+        gamma=0.99,
+        train_freq=1,  # Train at every step
+        gradient_steps=1,
+        ent_coef='auto',  # Automatic entropy tuning
+        target_update_interval=1,
+        use_sde=True,  # State Dependent Exploration
+        sde_sample_freq=4,
+    )
+    
+    print("📖 SAC Özellikleri:")
+    print("  ✓ Off-policy: Geçmiş deneyimlerden öğrenir")
+    print("  ✓ Entropy regularization: Exploration teşvik edilir")
+    print("  ✓ State Dependent Exploration: Dinamik keşif")
+    print("  ✓ Replay buffer: Veri verimliliği yüksek")
+    print()
+    
+    # Train with curriculum
+    print("🏃 Eğitim başladı... (500k timesteps)")
+    model.learn(total_timesteps=500_000, callback=curriculum_callback)
+    
+    # Save final model
+    model.save(os.path.join(models_dir, "drone_pilot_sac"))
+    print("\n✅ Eğitim Tamamlandı!")
+    print(f"📁 Model kaydedildi: {models_dir}/drone_pilot_sac.zip")
+    print("\n💡 Test için çalıştır: python scripts/test_sac.py")
+
+if __name__ == "__main__":
+    train()
