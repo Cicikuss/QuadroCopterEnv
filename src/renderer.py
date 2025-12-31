@@ -17,6 +17,14 @@ class Renderer:
         self.target_image = None
         
         self._initialized = False
+        
+        # Statistics tracking
+        self.episode_count = 0
+        self.total_steps = 0
+        self.current_episode_steps = 0
+        self.episode_rewards = []
+        self.current_episode_reward = 0.0
+        self.fps_samples = []
     
     def initialize(self) -> None:
         """Initialize pygame window and clock."""
@@ -63,7 +71,9 @@ class Renderer:
         size: float,
         trail: List[np.ndarray] = None,
         debug_mode: bool = False,
-        agent_half_size: float = 0.25
+        agent_half_size: float = 0.25,
+        current_reward: float = 0.0,
+        episode_terminated: bool = False
     ) -> None:
         """Render the environment.
         
@@ -99,8 +109,20 @@ class Renderer:
         agent_pos = self._get_position(agent_location, size)
         target_pos = self._get_position(target_location, size)
         
+        # Calculate distance to target
+        distance_to_target = np.linalg.norm(agent_location - target_location)
+        
+        # Draw target pulse effect
+        self._draw_target_pulse(canvas, target_pos)
+        
+        # Draw direction arrow to target
+        self._draw_direction_arrow(canvas, agent_pos, target_pos)
+        
         # Draw LIDAR rays
         self._draw_lidar_rays(canvas, agent_pos, lidar_points)
+        
+        # Draw collision warning if obstacles nearby
+        self._draw_collision_warning(canvas, agent_pos, lidar_points)
         
         # Draw shadow
         self._draw_shadow(canvas, agent_pos)
@@ -113,6 +135,9 @@ class Renderer:
         rotation = self._get_rotation(latest_action)
         self._draw_agent(canvas, agent_pos, rotation)
         
+        # Draw velocity arrow
+        self._draw_velocity_arrow(canvas, agent_pos, latest_action)
+        
         # Draw target
         self._draw_target(canvas, target_pos)
         
@@ -120,9 +145,22 @@ class Renderer:
         if debug_mode:
             self._draw_hitbox(canvas, agent_pos, agent_half_size)
         
-        # Draw fuel bar and text
+        # Draw HUD elements
         self._draw_fuel_bar(canvas, fuel, max_fuel)
         self._draw_fuel_text(canvas, fuel, max_fuel)
+        self._draw_distance_indicator(canvas, distance_to_target)
+        self._draw_episode_stats(canvas, current_reward)
+        
+        # Update statistics
+        self.current_episode_steps += 1
+        self.total_steps += 1
+        self.current_episode_reward += current_reward
+        
+        if episode_terminated:
+            self.episode_count += 1
+            self.episode_rewards.append(self.current_episode_reward)
+            self.current_episode_steps = 0
+            self.current_episode_reward = 0.0
         
         # Update display
         self.window.blit(canvas, (0, 0))
@@ -302,6 +340,184 @@ class Renderer:
             int(agent_half_size * 2 * self.scale_factor),
         )
         pygame.draw.rect(canvas, (0, 0, 255), agent_rect_pixel, 1)
+    
+    def _draw_direction_arrow(self, canvas: pygame.Surface, agent_pos: Tuple[int, int], target_pos: Tuple[int, int]) -> None:
+        """Draw arrow pointing from agent to target."""
+        dx = target_pos[0] - agent_pos[0]
+        dy = target_pos[1] - agent_pos[1]
+        distance = np.sqrt(dx*dx + dy*dy)
+        
+        if distance < 5:  # Too close, don't draw
+            return
+        
+        # Normalize direction
+        dx /= distance
+        dy /= distance
+        
+        # Arrow starts at agent radius, ends 30 pixels away
+        arrow_start = (int(agent_pos[0] + dx * 30), int(agent_pos[1] + dy * 30))
+        arrow_end = (int(agent_pos[0] + dx * 60), int(agent_pos[1] + dy * 60))
+        
+        # Draw dashed line to target
+        dash_length = 10
+        num_dashes = int(distance / dash_length)
+        for i in range(0, num_dashes, 2):
+            start = (
+                int(agent_pos[0] + dx * i * dash_length),
+                int(agent_pos[1] + dy * i * dash_length)
+            )
+            end = (
+                int(agent_pos[0] + dx * (i + 1) * dash_length),
+                int(agent_pos[1] + dy * (i + 1) * dash_length)
+            )
+            pygame.draw.line(canvas, (255, 165, 0, 100), start, end, 2)
+        
+        # Draw arrow
+        pygame.draw.line(canvas, (255, 165, 0), arrow_start, arrow_end, 3)
+        
+        # Arrow head
+        angle = np.arctan2(dy, dx)
+        arrow_head_length = 10
+        left_angle = angle + np.pi * 0.75
+        right_angle = angle - np.pi * 0.75
+        
+        left_point = (
+            int(arrow_end[0] + arrow_head_length * np.cos(left_angle)),
+            int(arrow_end[1] + arrow_head_length * np.sin(left_angle))
+        )
+        right_point = (
+            int(arrow_end[0] + arrow_head_length * np.cos(right_angle)),
+            int(arrow_end[1] + arrow_head_length * np.sin(right_angle))
+        )
+        
+        pygame.draw.polygon(canvas, (255, 165, 0), [arrow_end, left_point, right_point])
+    
+    def _draw_velocity_arrow(self, canvas: pygame.Surface, agent_pos: Tuple[int, int], action: np.ndarray) -> None:
+        """Draw velocity vector arrow."""
+        magnitude = np.linalg.norm(action)
+        if magnitude < 0.1:  # Too small, don't draw
+            return
+        
+        # Scale arrow length
+        arrow_length = magnitude * 50
+        dx = action[0] / magnitude
+        dy = action[1] / magnitude
+        
+        arrow_end = (
+            int(agent_pos[0] + dx * arrow_length),
+            int(agent_pos[1] + dy * arrow_length)
+        )
+        
+        # Draw velocity line
+        pygame.draw.line(canvas, (0, 255, 255), agent_pos, arrow_end, 2)
+        
+        # Arrow head
+        angle = np.arctan2(dy, dx)
+        arrow_head_length = 8
+        left_angle = angle + np.pi * 0.75
+        right_angle = angle - np.pi * 0.75
+        
+        left_point = (
+            int(arrow_end[0] + arrow_head_length * np.cos(left_angle)),
+            int(arrow_end[1] + arrow_head_length * np.sin(left_angle))
+        )
+        right_point = (
+            int(arrow_end[0] + arrow_head_length * np.cos(right_angle)),
+            int(arrow_end[1] + arrow_head_length * np.sin(right_angle))
+        )
+        
+        pygame.draw.polygon(canvas, (0, 255, 255), [arrow_end, left_point, right_point])
+    
+    def _draw_collision_warning(self, canvas: pygame.Surface, agent_pos: Tuple[int, int], lidar_points: List[Tuple[float, float]]) -> None:
+        """Draw warning ring if obstacles are very close."""
+        if not lidar_points:
+            return
+        
+        # Find minimum distance to any obstacle
+        min_distance = float('inf')
+        for point in lidar_points:
+            end_pos = (int(point[0] * self.scale_factor), int(point[1] * self.scale_factor))
+            dx = end_pos[0] - agent_pos[0]
+            dy = end_pos[1] - agent_pos[1]
+            distance = np.sqrt(dx*dx + dy*dy)
+            min_distance = min(min_distance, distance)
+        
+        # Warning threshold (30 pixels)
+        warning_threshold = 30
+        if min_distance < warning_threshold:
+            # Calculate warning intensity (0-1, 1 = very close)
+            intensity = 1.0 - (min_distance / warning_threshold)
+            
+            # Draw pulsing warning ring
+            import time
+            pulse = (np.sin(time.time() * 10) + 1) / 2  # 0-1 oscillation
+            alpha = int(100 * intensity * pulse)
+            radius = int(40 + 20 * pulse)
+            
+            warning_surface = pygame.Surface((self.window_size, self.window_size), pygame.SRCALPHA)
+            pygame.draw.circle(warning_surface, (255, 0, 0, alpha), agent_pos, radius, 3)
+            canvas.blit(warning_surface, (0, 0))
+    
+    def _draw_target_pulse(self, canvas: pygame.Surface, target_pos: Tuple[int, int]) -> None:
+        """Draw pulsing effect around target."""
+        import time
+        pulse = (np.sin(time.time() * 3) + 1) / 2  # 0-1 oscillation
+        radius = int(30 + 15 * pulse)
+        alpha = int(50 + 50 * (1 - pulse))
+        
+        pulse_surface = pygame.Surface((self.window_size, self.window_size), pygame.SRCALPHA)
+        pygame.draw.circle(pulse_surface, (0, 255, 0, alpha), target_pos, radius, 2)
+        canvas.blit(pulse_surface, (0, 0))
+    
+    def _draw_distance_indicator(self, canvas: pygame.Surface, distance: float) -> None:
+        """Draw distance to target indicator."""
+        font = pygame.font.SysFont(None, 28)
+        text = font.render(f'Distance: {distance:.2f}m', True, (50, 50, 50))
+        
+        # Background box
+        padding = 5
+        box_rect = pygame.Rect(
+            self.window_size - text.get_width() - padding * 2 - 10,
+            10,
+            text.get_width() + padding * 2,
+            text.get_height() + padding * 2
+        )
+        
+        box_surface = pygame.Surface((box_rect.width, box_rect.height), pygame.SRCALPHA)
+        pygame.draw.rect(box_surface, (255, 255, 255, 200), box_surface.get_rect(), border_radius=5)
+        pygame.draw.rect(box_surface, (100, 100, 100), box_surface.get_rect(), 2, border_radius=5)
+        canvas.blit(box_surface, (box_rect.x, box_rect.y))
+        
+        canvas.blit(text, (box_rect.x + padding, box_rect.y + padding))
+    
+    def _draw_episode_stats(self, canvas: pygame.Surface, current_reward: float) -> None:
+        """Draw episode statistics."""
+        font = pygame.font.SysFont(None, 24)
+        
+        stats_lines = [
+            f'Episode: {self.episode_count}',
+            f'Steps: {self.current_episode_steps}',
+            f'Reward: {self.current_episode_reward:.1f}',
+        ]
+        
+        if self.episode_rewards:
+            avg_reward = np.mean(self.episode_rewards[-10:])  # Last 10 episodes
+            stats_lines.append(f'Avg (10): {avg_reward:.1f}')
+        
+        # Draw stats box
+        y_offset = self.window_size - 120
+        for i, line in enumerate(stats_lines):
+            text = font.render(line, True, (50, 50, 50))
+            
+            # Background
+            padding = 5
+            box_rect = pygame.Rect(10, y_offset + i * 25, text.get_width() + padding * 2, text.get_height() + padding * 2)
+            box_surface = pygame.Surface((box_rect.width, box_rect.height), pygame.SRCALPHA)
+            pygame.draw.rect(box_surface, (255, 255, 255, 200), box_surface.get_rect(), border_radius=3)
+            pygame.draw.rect(box_surface, (100, 100, 100), box_surface.get_rect(), 1, border_radius=3)
+            canvas.blit(box_surface, (box_rect.x, box_rect.y))
+            
+            canvas.blit(text, (box_rect.x + padding, box_rect.y + padding))
     
     def close(self) -> None:
         """Close the renderer and cleanup."""

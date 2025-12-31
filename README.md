@@ -7,9 +7,10 @@ A custom Gymnasium environment for training autonomous quadcopter agents using r
 - **Custom Gymnasium Environment**: Built from scratch following OpenAI Gym standards
 - **LIDAR Sensor System**: 16-ray LIDAR for obstacle detection (360° coverage)
 - **Curriculum Learning**: Progressive difficulty - starts easy, gradually increases obstacles
+- **Action Smoothing**: Momentum-based continuous action space for realistic drone physics
 - **Intelligent Pathfinding**: BFS-based validation ensures target is always reachable
-- **Fuel Management**: Limited fuel encourages efficient path planning
-- **Pygame Visualization**: Real-time rendering with LIDAR rays, fuel bar, and drone rotation
+- **Dynamic Fuel Management**: Fuel consumption based on movement speed
+- **Advanced Visualization**: Real-time rendering with LIDAR gradient, direction arrows, collision warnings, and HUD
 - **PPO Training**: Uses Stable-Baselines3 for reinforcement learning
 
 ## Project Structure 📁
@@ -111,22 +112,24 @@ Dict observation with 4 components:
 
 ### Action Space
 
-Continuous 2D movement:
+Continuous 2D movement with action smoothing:
 
 ```python
 Box(-1, 1, shape=(2,))  # (x_velocity, y_velocity)
 ```
+
+**Action Smoothing**: Actions are blended with previous actions using exponential moving average (alpha=0.5) to create momentum and smoother, more realistic trajectories.
 
 ### Reward Structure
 
 | Event | Reward | Description |
 |-------|--------|-------------|
 | 🎯 Target Reached | **+100** | Successfully reached the target |
-| 💥 Collision | **-100** | Hit an obstacle |
-| ⛽ Out of Fuel | **-100** | Ran out of fuel |
-| ➡️ Moving Closer | **+2.0** | Per unit distance reduced |
-| ⬅️ Moving Away | **-2.0** | Per unit distance increased |
-| ⏱️ Each Step | **-0.05** | Encourages efficiency |
+| 💥 Collision | **-50** | Hit an obstacle (reduced for better exploration) |
+| ⛽ Out of Fuel | **-50** | Ran out of fuel |
+| ➡️ Moving Closer | **+5.0** | Per unit distance reduced (increased for stronger signal) |
+| ⬅️ Moving Away | **-5.0** | Per unit distance increased |
+| ⏱️ Each Step | **-0.01** | Encourages efficiency |
 
 ### Environment Constants
 
@@ -135,8 +138,9 @@ NUM_OBSTACLES = 4                    # Number of obstacles per episode
 OBSTACLE_SIZE_MIN = 0.5             # Minimum obstacle size
 OBSTACLE_SIZE_MAX = 1.5             # Maximum obstacle size
 TARGET_DISTANCE_THRESHOLD = 0.5     # Target reach distance
-MAX_FUEL = 500                      # Starting fuel amount
-AGENT_HALF_SIZE = 0.25              # Drone collision box half-size
+MAX_FUEL = 1000                     # Starting fuel amount (increased for exploration)
+AGENT_HALF_SIZE = 0.15              # Drone collision box half-size
+ACTION_SMOOTHING_ALPHA = 0.5        # Momentum blending factor
 ```
 
 ## Key Features Explained 🔍
@@ -155,12 +159,37 @@ AGENT_HALF_SIZE = 0.25              # Drone collision box half-size
   - 350k+: 100% difficulty (4 obstacles - maximum)
 - **Benefits**: Faster convergence, better final performance, more stable training
 
-### LIDAR System
+### Action Smoothing 🌊
 
+- **Momentum-Based Control**: Actions are smoothed using exponential moving average
+- **Formula**: `smooth_action = 0.5 * new_action + 0.5 * prev_smooth_action`
+- **Benefits**: 
+  - More realistic drone physics with inertia
+  - Smoother trajectories and reduced jitter
+  - Better generalization to real-world scenarios
+- **Dynamic Fuel**: Fuel consumption scales with movement speed (1-6 units/step)
+
+### Advanced Visualization 🎨
+
+**LIDAR System**:
 - **16 rays** cast in 360° around the drone
-- **3.0 unit range** for obstacle detection
-- Ray distances normalized to [0, 1] for neural network input
-- Visualized as red lines during rendering
+- **Distance-based color gradient**: 
+  - 🔴 Red: Very close obstacles (danger)
+  - 🟡 Yellow: Medium distance
+  - 🟢 Green: Far obstacles (safe)
+- **3.0 unit range** with semi-transparent max range circle
+- **Glow effects** on hit points for better visibility
+
+**Real-time HUD**:
+- 🎯 **Direction Arrow**: Orange dashed line and arrow pointing to target
+- ⚡ **Velocity Vector**: Cyan arrow showing current movement direction and speed
+- 🔔 **Collision Warning**: Pulsing red ring when obstacles are dangerously close
+- ✨ **Target Pulse**: Animated green pulse effect around target
+- 📍 **Distance Indicator**: Real-time distance to target (top-right)
+- 📊 **Episode Stats**: Episode number, steps, current reward, rolling average (bottom-left)
+- ⛽ **Fuel Bar**: Green bar with numeric display (top-left)
+
+### LIDAR System
 
 ### Pathfinding Validation
 
@@ -171,10 +200,11 @@ AGENT_HALF_SIZE = 0.25              # Drone collision box half-size
 
 ### Fuel System
 
-- Starts with **500 fuel units**
-- Consumes **1 fuel per step**
+- Starts with **1000 fuel units** (increased for longer exploration)
+- **Dynamic consumption**: 1-6 fuel per step based on movement speed
 - Episode terminates when fuel depletes
 - Visualized as green bar in top-left corner
+- Encourages efficient but not overly conservative movement
 
 ### Collision Detection
 
@@ -247,11 +277,11 @@ Potential improvements:
 
 - [ ] Dynamic obstacle movement
 - [ ] Multi-target waypoint navigation
-- [ ] Continuous action space refinement
-- [ ] Diagonal LIDAR rays
+- [ ] Diagonal LIDAR rays for denser coverage
 - [ ] Wind/drift physics simulation
 - [ ] 3D environment extension
 - [ ] Multi-agent scenarios
+- [ ] Variable obstacle shapes (circles, polygons)
 
 ## Contributing 🤝
 

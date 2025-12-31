@@ -36,6 +36,11 @@ class QuadroCopterEnv(gym.Env):
         self._target_location = np.array([-1, -1], dtype=np.float32)
         self.difficulty = 0.0  # Start with NO obstacles for easier learning
         self.prev_distance = 0.0
+        self.last_reward = 0.0
+        
+        # Action smoothing parameters for continuous action space refinement
+        self.smooth_action = np.array([0, 0], dtype=np.float32)
+        self.alpha = 0.5  # Smoothing factor (0.5 = equal blend of old and new)
         
         # Initialize renderer only if needed
         self.renderer = None
@@ -290,6 +295,7 @@ class QuadroCopterEnv(gym.Env):
         self.fuel = self.MAX_FUEL
         self.trail = []
         self.prev_distance = np.linalg.norm(self._agent_location - self._target_location)
+        self.smooth_action = np.array([0, 0], dtype=np.float32)  # Reset action smoothing
         
         return self._get_obs(), self._get_info()
     
@@ -355,19 +361,30 @@ class QuadroCopterEnv(gym.Env):
         return total_reward
 
     def step(self, action: np.ndarray) -> Tuple[Dict, float, bool, bool, Dict]:
-        """Execute one step of the environment."""
+        """Execute one step of the environment with action smoothing."""
         self.latest_action = action.copy()
         
         # Get current distance before movement
         prev_distance = np.linalg.norm(self._agent_location - self._target_location)
         prev_position = self._agent_location.copy()
         
-        # Increased speed for faster navigation
-        speed = 0.1  # Smaller steps for more precise control
-        self.fuel -= 1
+        # Action smoothing: blend current action with previous smoothed action
+        # This creates momentum and smoother trajectories
+        self.smooth_action = (self.alpha * action) + ((1 - self.alpha) * self.smooth_action)
+        
+        # Clamp smoothed action to [-1, 1] range
+        self.smooth_action = np.clip(self.smooth_action, -1.0, 1.0)
+        
+        # Calculate velocity with speed scaling
+        speed = 0.15  # Base speed multiplier for controlled movement
+        velocity = self.smooth_action * speed
+        
+        # Fuel consumption based on movement magnitude (more movement = more fuel)
+        movement_cost = int(np.linalg.norm(velocity) * 5) + 1  # 1-6 fuel per step
+        self.fuel -= movement_cost
         
         # Calculate proposed location
-        proposed_location = self._agent_location + (action * speed)
+        proposed_location = self._agent_location + velocity
         
         # Clip to boundaries with margin
         margin = self.AGENT_HALF_SIZE
@@ -395,6 +412,7 @@ class QuadroCopterEnv(gym.Env):
         terminated = target_reached or hit_wall or (self.fuel <= 0)
         truncated = False
         reward = self._calculate_reward(terminated, hit_wall, prev_distance, curr_distance, no_movement)
+        self.last_reward = reward
         
         # Update trail for visualization
         if self.render_mode == "human":
@@ -428,7 +446,9 @@ class QuadroCopterEnv(gym.Env):
             size=self.size,
             trail=self.trail,
             debug_mode=self.debug_mode,
-            agent_half_size=self.AGENT_HALF_SIZE
+            agent_half_size=self.AGENT_HALF_SIZE,
+            current_reward=self.last_reward,
+            episode_terminated=False
         )
     
     def close(self) -> None:
