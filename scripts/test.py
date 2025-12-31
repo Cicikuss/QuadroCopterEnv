@@ -14,9 +14,23 @@ gym.register(
 
 def test():
     print("👀 Model yükleniyor ve test başlıyor...")
+    
+    # Zorluk seviyesi seçimi
+    print("\n🎮 Zorluk Seviyesi Seçin:")
+    print("  1 - Kolay (1 engel)")
+    print("  2 - Orta (2 engel)")
+    print("  3 - Zor (3 engel)")
+    print("  4 - Çok Zor (4 engel - Maximum)")
+    
+    difficulty_choice = input("Seçim (1-4) [Enter=4]: ").strip() or "4"
+    difficulty_map = {"1": 0.25, "2": 0.5, "3": 0.75, "4": 1.0}
+    difficulty = difficulty_map.get(difficulty_choice, 1.0)
+    
+    print(f"\n✅ Zorluk ayarlandı: {difficulty*100:.0f}% ({int(4*difficulty)} engel)")
 
     # 2. Ortamı Yarat (render_mode="human" -> İZLEMEK İÇİN)
     env = gym.make("QuadroCopterEnv-v0", size=5, render_mode="human")
+    env.unwrapped.set_difficulty(difficulty)
 
     # 3. Eğitilmiş Modeli Yükle
     model_path = "models/PPO/drone_pilot_curriculum"

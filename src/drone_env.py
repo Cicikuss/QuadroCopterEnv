@@ -13,13 +13,12 @@ class QuadroCopterEnv(gym.Env):
     WINDOW_SIZE = 800
     AGENT_HALF_SIZE = 0.15
     TARGET_DISTANCE_THRESHOLD = 0.5
-    COLLISION_REWARD = -100.0
-    MAX_FUEL = 500  # Increased from 1000, but enough for 300 steps with efficiency bonus
+    COLLISION_REWARD = -50.0  # Reduced from -100 to make learning easier
+    MAX_FUEL = 1000  # Increased to allow more exploration
     TARGET_REACHED_REWARD = 100.0
-    DISTANCE_REWARD_SCALE = 2.0  # Stronger reward for moving closer (0-2.0 per step)
-    STEP_PENALTY = -0.05  # Small penalty per step to encourage efficiency
-    FUEL_PENALTY = -0.1  # Penalty for running out of fuel
-    
+    DISTANCE_REWARD_SCALE = 5.0  # Increased to make distance progress more important
+    STEP_PENALTY = -0.01  # Reduced to focus more on distance
+    FUEL_PENALTY = -50.0  # Reduced from -100
     
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 30}
 
@@ -35,7 +34,8 @@ class QuadroCopterEnv(gym.Env):
         self.latest_action = np.array([0, 0], dtype=np.float32)
         self._agent_location = np.array([-1, -1], dtype=np.float32)
         self._target_location = np.array([-1, -1], dtype=np.float32)
-        self.difficulty = 0.25  # Start at 25% (1 obstacle) 
+        self.difficulty = 0.0  # Start with NO obstacles for easier learning
+        self.prev_distance = 0.0
         
         # Initialize renderer only if needed
         self.renderer = None
@@ -82,7 +82,8 @@ class QuadroCopterEnv(gym.Env):
                 attempts += 1
         
         return obstacles
-    def set_difficulty(self, level: int) -> None:
+    
+    def set_difficulty(self, level: float) -> None:
         """Set difficulty level which affects number of obstacles."""
         self.difficulty = np.clip(level, 0.0, 1.0)
         print(f"🔧 Difficulty set to {self.difficulty:.2f}")
@@ -90,7 +91,7 @@ class QuadroCopterEnv(gym.Env):
     def _point_in_obstacle(self, point: np.ndarray, obstacle: np.ndarray) -> bool:
         """Check if a point is inside an obstacle (with margin)."""
         x, y, w, h = obstacle
-        margin = self.AGENT_HALF_SIZE
+        margin = self.AGENT_HALF_SIZE * 1.5  # Slightly larger margin for safety
         
         return (x - margin < point[0] < x + w + margin and
                 y - margin < point[1] < y + h + margin)
@@ -98,7 +99,7 @@ class QuadroCopterEnv(gym.Env):
     def _find_safe_position(self, avoid_positions: list = None) -> np.ndarray:
         """Find a safe position that doesn't collide with obstacles or other positions."""
         max_attempts = 1000
-        margin = self.AGENT_HALF_SIZE * 2
+        margin = self.AGENT_HALF_SIZE * 3  # Increased margin
         
         for _ in range(max_attempts):
             # Generate random position with margin from boundaries
@@ -118,7 +119,9 @@ class QuadroCopterEnv(gym.Env):
             # Check if position is far enough from other positions
             if is_safe and avoid_positions:
                 for other_pos in avoid_positions:
-                    if np.linalg.norm(position - other_pos) < margin * 2:
+                    # Ensure minimum distance between agent and target
+                    min_distance = 1.5  # At least 1.5 units apart
+                    if np.linalg.norm(position - other_pos) < min_distance:
                         is_safe = False
                         break
             
@@ -130,6 +133,7 @@ class QuadroCopterEnv(gym.Env):
     
     def _setup_spaces(self) -> None:
         """Setup observation and action spaces."""
+        # Add distance to target in observation for easier learning
         self.observation_space = gym.spaces.Dict({
             "agent": gym.spaces.Box(
                 low=0, high=self.size, shape=(2,), dtype=np.float32
@@ -143,17 +147,19 @@ class QuadroCopterEnv(gym.Env):
             "fuel": gym.spaces.Box(
                 low=0, high=1, shape=(1,), dtype=np.float32
             ),
+            "relative_target": gym.spaces.Box(
+                low=-self.size, high=self.size, shape=(2,), dtype=np.float32
+            ),
+            "distance_to_target": gym.spaces.Box(
+                low=0, high=self.size * np.sqrt(2), shape=(1,), dtype=np.float32
+            ),
         })
         self.action_space = gym.spaces.Box(
             low=-1, high=1, shape=(2,), dtype=np.float32
         )
     
     def _get_obstacle_corners(self) -> list:
-        """Convert rectangular obstacles (x, y, w, h) to corner points for LIDAR.
-        
-        Returns:
-            List of corner points for each obstacle: [[(x1,y1), (x2,y2), (x3,y3), (x4,y4)], ...]
-        """
+        """Convert rectangular obstacles (x, y, w, h) to corner points for LIDAR."""
         corners_list = []
         for obs in self.obstacles:
             x, y, w, h = obs
@@ -167,7 +173,7 @@ class QuadroCopterEnv(gym.Env):
         return corners_list
     
     def _get_obs(self) -> Dict[str, np.ndarray]:
-        """Get current observation."""
+        """Get current observation with additional helpful features."""
         obstacle_corners = self._get_obstacle_corners()
         lidar_readings = self.lidar.cast_rays(
             self._agent_location, 
@@ -176,23 +182,30 @@ class QuadroCopterEnv(gym.Env):
         )
         normalized_readings = np.array(lidar_readings) / self.lidar.max_range
         
+        # Add relative position to target (helps learning direction)
+        relative_target = self._target_location - self._agent_location
+        distance_to_target = np.linalg.norm(relative_target)
+        
         return {
             "agent": self._agent_location.copy(),
             "target": self._target_location.copy(),
             "lidar": normalized_readings,
-            "fuel": np.array([self.fuel / self.MAX_FUEL], dtype=np.float32)
+            "fuel": np.array([self.fuel / self.MAX_FUEL], dtype=np.float32),
+            "relative_target": relative_target,
+            "distance_to_target": np.array([distance_to_target], dtype=np.float32),
         }
 
     def _get_info(self) -> Dict[str, float]:
         """Get current info."""
         distance = np.linalg.norm(self._agent_location - self._target_location)
-        return {"distance": distance}
+        return {
+            "distance": distance,
+            "fuel_remaining": self.fuel,
+            "success": distance < self.TARGET_DISTANCE_THRESHOLD
+        }
+    
     def _is_path_possible(self) -> bool:
-        """Check if there's a valid path between agent and target using BFS (Flood Fill).
-        
-        Returns:
-            True if path exists, False otherwise
-        """
+        """Check if there's a valid path between agent and target using BFS."""
         grid_resolution = 20
         grid = np.zeros((grid_resolution, grid_resolution))
         
@@ -204,23 +217,25 @@ class QuadroCopterEnv(gym.Env):
             iw = int(w / self.size * grid_resolution) + 1
             ih = int(h / self.size * grid_resolution) + 1
             
+            ix = np.clip(ix, 0, grid_resolution - 1)
+            iy = np.clip(iy, 0, grid_resolution - 1)
+            iw = np.clip(iw, 0, grid_resolution - ix)
+            ih = np.clip(ih, 0, grid_resolution - iy)
+            
             grid[ix:ix+iw, iy:iy+ih] = 1
 
         # Convert positions to grid coordinates
         start_node = (
-            int(self._agent_location[0] / self.size * grid_resolution),
-            int(self._agent_location[1] / self.size * grid_resolution)
+            np.clip(int(self._agent_location[0] / self.size * grid_resolution), 0, grid_resolution - 1),
+            np.clip(int(self._agent_location[1] / self.size * grid_resolution), 0, grid_resolution - 1)
         )
         target_node = (
-            int(self._target_location[0] / self.size * grid_resolution),
-            int(self._target_location[1] / self.size * grid_resolution)
+            np.clip(int(self._target_location[0] / self.size * grid_resolution), 0, grid_resolution - 1),
+            np.clip(int(self._target_location[1] / self.size * grid_resolution), 0, grid_resolution - 1)
         )
 
         # Check if start or target is on an obstacle
-        try:
-            if grid[start_node] == 1 or grid[target_node] == 1:
-                return False
-        except IndexError:
+        if grid[start_node] == 1 or grid[target_node] == 1:
             return False
 
         # BFS pathfinding
@@ -228,7 +243,7 @@ class QuadroCopterEnv(gym.Env):
         visited = set()
         visited.add(start_node)
         
-        directions = [(0,1), (0,-1), (1,0), (-1,0)]
+        directions = [(0,1), (0,-1), (1,0), (-1,0), (1,1), (1,-1), (-1,1), (-1,-1)]  # Added diagonals
 
         while queue:
             current = queue.pop(0)
@@ -257,8 +272,8 @@ class QuadroCopterEnv(gym.Env):
         """Reset the environment."""
         super().reset(seed=seed)
         
-        # Try up to 10 times to generate a valid map with reachable target
-        for _ in range(10):
+        # Try up to 20 times to generate a valid map
+        for attempt in range(20):
             # Generate obstacles
             self.obstacles = self._generate_obstacles()
             
@@ -269,20 +284,23 @@ class QuadroCopterEnv(gym.Env):
             )
             
             # Check if path exists between agent and target
-            if self._is_path_possible():
+            if self.difficulty == 0 or self._is_path_possible():
                 break
         
         self.fuel = self.MAX_FUEL
+        self.trail = []
+        self.prev_distance = np.linalg.norm(self._agent_location - self._target_location)
+        
         return self._get_obs(), self._get_info()
     
     def _check_collision(self, proposed_position: np.ndarray) -> bool:
         """Check if agent collides with obstacles at proposed position."""
-        # Agent dimensions
-        agent_w, agent_h = 0.5, 0.5
-        agent_l = proposed_position[0] - agent_w / 2
-        agent_r = proposed_position[0] + agent_w / 2
-        agent_t = proposed_position[1] - agent_h / 2
-        agent_b = proposed_position[1] + agent_h / 2
+        # Use a smaller collision box for more forgiving collisions
+        agent_size = self.AGENT_HALF_SIZE * 0.8  # 20% smaller hitbox
+        agent_l = proposed_position[0] - agent_size
+        agent_r = proposed_position[0] + agent_size
+        agent_t = proposed_position[1] - agent_size
+        agent_b = proposed_position[1] + agent_size
         
         # Check collision with obstacles
         for obstacle in self.obstacles:
@@ -294,51 +312,60 @@ class QuadroCopterEnv(gym.Env):
         return False
     
     def _calculate_reward(
-        self, terminated: bool, hit_wall: bool, prev_distance: float, curr_distance: float
+        self, terminated: bool, hit_wall: bool, prev_distance: float, curr_distance: float, no_movement: bool
     ) -> float:
-        """Calculate reward based on environment state.
+        """Calculate reward with shaped rewards for better learning."""
         
-        Reward structure:
-        - Target reached (without collision): +100
-        - Collision: -100
-        - Out of fuel: -100
-        - Moving closer: distance_diff (positive reward for reducing distance)
-        - Moving away: -distance_diff (penalty for increasing distance)
-        - Each step: -0.05 (encourage efficiency)
-        """
-        # Highest priority: collision and fuel are worst
+        # Terminal rewards/penalties
         if hit_wall:
-            return self.COLLISION_REWARD  # -100
+            # Give partial reward for getting close before collision
+            closeness_bonus = max(0, (5.0 - prev_distance) * 2.0)
+            return self.COLLISION_REWARD + closeness_bonus
         
         if self.fuel <= 0:
-            return self.FUEL_PENALTY  # -100
+            # Penalty for running out of fuel
+            closeness_bonus = max(0, (5.0 - prev_distance) * 2.0)
+            return self.FUEL_PENALTY + closeness_bonus
         
-        # Second priority: reaching target is best
-        if terminated:  # This means target reached (not from collision/fuel)
-            return self.TARGET_REACHED_REWARD  # +100
+        if terminated:  # Target reached
+            # Bonus for remaining fuel (encourages efficiency)
+            fuel_bonus = (self.fuel / self.MAX_FUEL) * 20.0
+            return self.TARGET_REACHED_REWARD + fuel_bonus
         
-        # Otherwise: reward movement toward target
-        # If moved closer: positive reward, if moved away: negative penalty
-        distance_diff = prev_distance - curr_distance  # positive if moved closer
-        distance_reward = distance_diff * self.DISTANCE_REWARD_SCALE  # Can be +/- 2.0
+        # Distance-based shaping
+        distance_improvement = prev_distance - curr_distance
+        distance_reward = distance_improvement * self.DISTANCE_REWARD_SCALE
         
-        # Add small penalty for each step to encourage quick solutions
-        step_penalty = self.STEP_PENALTY  # -0.05
+        # Penalty for not making progress (staying in place)
+        if no_movement:
+            distance_reward -= 2.0  # Strong penalty for staying still
         
-        return distance_reward + step_penalty
+        # Bonus for getting very close to target
+        if curr_distance < 1.0:
+            proximity_bonus = (1.0 - curr_distance) * 2.0
+            distance_reward += proximity_bonus
+        
+        # Penalty for being stuck close to target without reaching it
+        if curr_distance < 1.0 and abs(distance_improvement) < 0.01:
+            distance_reward -= 1.0  # Penalty for hovering near target without reaching it
+        
+        # Small penalty for each step
+        total_reward = distance_reward + self.STEP_PENALTY
+        
+        return total_reward
 
     def step(self, action: np.ndarray) -> Tuple[Dict, float, bool, bool, Dict]:
         """Execute one step of the environment."""
         self.latest_action = action.copy()
-        self.trail.append(self._agent_location.copy())
-        if len(self.trail) > 10: # keep last 10 positions
-            self.trail.pop(0)
+        
         # Get current distance before movement
         prev_distance = np.linalg.norm(self._agent_location - self._target_location)
+        prev_position = self._agent_location.copy()
         
-        # Speed multiplier for controlled movement (increased from 0.2 to 0.5)
-        speed = 0.5
-        self.fuel -= 1  # Decrease fuel per step
+        # Increased speed for faster navigation
+        speed = 0.1  # Smaller steps for more precise control
+        self.fuel -= 1
+        
         # Calculate proposed location
         proposed_location = self._agent_location + (action * speed)
         
@@ -357,19 +384,25 @@ class QuadroCopterEnv(gym.Env):
         if not hit_wall:
             self._agent_location = clipped_location
         
+        # Check if agent actually moved
+        movement_magnitude = np.linalg.norm(self._agent_location - prev_position)
+        no_movement = movement_magnitude < 0.001  # Agent didn't move significantly
+        
         # Check if target reached
         curr_distance = np.linalg.norm(self._agent_location - self._target_location)
         target_reached = curr_distance < self.TARGET_DISTANCE_THRESHOLD
         
         terminated = target_reached or hit_wall or (self.fuel <= 0)
         truncated = False
-        reward = self._calculate_reward(terminated, hit_wall, prev_distance, curr_distance)
+        reward = self._calculate_reward(terminated, hit_wall, prev_distance, curr_distance, no_movement)
         
         # Update trail for visualization
         if self.render_mode == "human":
             self.trail.append(self._agent_location.copy())
-            if len(self.trail) > 100:  # Keep last 100 positions
+            if len(self.trail) > 100:
                 self.trail.pop(0)
+        
+        self.prev_distance = curr_distance
         
         return self._get_obs(), reward, terminated, truncated, self._get_info()
 

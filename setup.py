@@ -11,11 +11,11 @@ setup(
     name="quadrocopter-env",
     version="1.0.0",
     author="Your Name",
-    author_email="your.email@example.com",
+    author_email="ahmetbyk49@gmail.com",
     description="A Gymnasium environment for training quadcopter agents with PPO and curriculum learning",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/yourusername/QuadroCopterEnv",
+    url="https://github.com/Cicikuss/QuadroCopterEnv",
     packages=find_packages(where="."),
     package_dir={"": "."},
     classifiers=[

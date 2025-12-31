@@ -169,19 +169,69 @@ class Renderer:
         agent_pos: Tuple[int, int], 
         lidar_points: List[Tuple[float, float]]
     ) -> None:
-        """Draw LIDAR rays with endpoint circles."""
+        """Draw LIDAR rays with distance-based color gradient and scanning area.
+        
+        - Scanning area: Semi-transparent circle showing max LIDAR range
+        - Ray colors: Green (far) -> Yellow (medium) -> Red (close)
+        - Hit points: Larger circles at obstacle intersections
+        - Ray thickness: Proportional to distance (thicker = closer obstacle)
+        """
         if not lidar_points:
             return
         
+        # Draw LIDAR max range circle (semi-transparent)
+        max_range_pixels = int(3.0 * self.scale_factor)  # 3.0 is max_range from Lidar
+        range_surface = pygame.Surface((self.window_size, self.window_size), pygame.SRCALPHA)
+        pygame.draw.circle(
+            range_surface, 
+            (100, 150, 255, 30),  # Light blue, very transparent
+            agent_pos, 
+            max_range_pixels, 
+            1
+        )
+        canvas.blit(range_surface, (0, 0))
+        
+        # Draw each ray with color gradient based on distance
         for point in lidar_points:
             end_pos = (
                 int(point[0] * self.scale_factor), 
                 int(point[1] * self.scale_factor)
             )
-            # Draw ray line
-            pygame.draw.line(canvas, (255, 0, 0), agent_pos, end_pos, 1)
-            # Draw endpoint dot
-            pygame.draw.circle(canvas, (255, 0, 0), end_pos, 3)
+            
+            # Calculate distance from agent to hit point
+            dx = end_pos[0] - agent_pos[0]
+            dy = end_pos[1] - agent_pos[1]
+            distance = np.sqrt(dx*dx + dy*dy)
+            
+            # Normalize distance (0 = close, 1 = far)
+            normalized_distance = min(distance / max_range_pixels, 1.0)
+            
+            # Color gradient: Red (0.0) -> Yellow (0.5) -> Green (1.0)
+            if normalized_distance < 0.5:
+                # Red to Yellow
+                t = normalized_distance * 2  # 0 to 1
+                color = (255, int(255 * t), 0)
+                thickness = 3
+                dot_radius = 5
+            else:
+                # Yellow to Green
+                t = (normalized_distance - 0.5) * 2  # 0 to 1
+                color = (int(255 * (1 - t)), 255, int(100 * t))
+                thickness = 2
+                dot_radius = 4
+            
+            # Draw ray line with varying thickness
+            pygame.draw.line(canvas, color, agent_pos, end_pos, thickness)
+            
+            # Draw hit point with glow effect
+            # Outer glow
+            glow_surface = pygame.Surface((self.window_size, self.window_size), pygame.SRCALPHA)
+            pygame.draw.circle(glow_surface, (*color, 50), end_pos, dot_radius + 3)
+            canvas.blit(glow_surface, (0, 0))
+            
+            # Inner solid dot
+            pygame.draw.circle(canvas, color, end_pos, dot_radius)
+            pygame.draw.circle(canvas, (255, 255, 255), end_pos, dot_radius // 2)
     
     def _get_rotation(self, action: np.ndarray) -> float:
         """Calculate rotation angle based on action."""
