@@ -15,20 +15,34 @@ A custom Gymnasium environment for training autonomous quadcopter agents using r
 
 ```
 QuadroCopterEnv/
-├── drone_env.py          # Main Gymnasium environment
-├── lidar.py              # LIDAR sensor implementation
-├── train.py              # Training script (PPO)
-├── test.py               # Model testing with visualization
+├── src/
+│   ├── __init__.py       # Package initialization
+│   ├── drone_env.py      # Main Gymnasium environment
+│   ├── lidar.py          # LIDAR sensor implementation
+│   └── renderer.py       # Rendering pipeline
+├── scripts/
+│   ├── train.py          # Training script (PPO)
+│   ├── test.py           # Model testing with visualization
+│   ├── analyze_model.py  # Model performance analysis
+│   └── test_random.py    # Random action testing
 ├── images/
 │   ├── quadro_copter.png # Drone sprite
 │   └── target.png        # Target sprite
-└── models/
-    └── PPO/              # Saved models directory
+├── models/
+│   └── PPO/              # Saved models directory
+├── README.md             # Documentation
+└── requirements.txt      # Python dependencies
 ```
 
 ## Installation 🔧
 
 ### Requirements
+
+```bash
+pip install -r requirements.txt
+```
+
+Or manually:
 
 ```bash
 pip install gymnasium
@@ -51,7 +65,7 @@ cd QuadroCopterEnv
 Train a new model from scratch (takes 2-5 minutes):
 
 ```bash
-python train.py
+python scripts/train.py
 ```
 
 Training parameters:
@@ -65,7 +79,7 @@ Training parameters:
 Watch the trained agent navigate:
 
 ```bash
-python test.py
+python scripts/test.py
 ```
 
 This will load the trained model and visualize the drone's behavior in real-time.
@@ -75,7 +89,7 @@ This will load the trained model and visualize the drone's behavior in real-time
 Check detailed statistics:
 
 ```bash
-python analyze_model.py
+python scripts/analyze_model.py
 ```
 
 ## Environment Details 🎮
@@ -157,12 +171,12 @@ AGENT_HALF_SIZE = 0.25              # Drone collision box half-size
 
 ### Improving Performance
 
-1. **Increase training time**: Change `TIMESTEPS` in `train.py`
+**1. Increase training time**: Change `TIMESTEPS` in `scripts/train.py`
    ```python
    TIMESTEPS = 500000  # More training steps
    ```
 
-2. **Adjust reward scaling**: Modify constants in `drone_env.py`
+2. **Adjust reward scaling**: Modify constants in `src/drone_env.py`
    ```python
    DISTANCE_REWARD_SCALE = 3.0  # Stronger movement reward
    STEP_PENALTY = -0.1          # Stronger efficiency penalty
@@ -182,7 +196,7 @@ AGENT_HALF_SIZE = 0.25              # Drone collision box half-size
 ### Common Issues
 
 **1. Agent doesn't move**
-- Retrain the model with `python train.py`
+- Retrain the model with `python scripts/train.py`
 - Check that `render_mode=None` (not `"none"`) in training
 
 **2. Gymnasium import error**
@@ -193,8 +207,12 @@ AGENT_HALF_SIZE = 0.25              # Drone collision box half-size
 - LIDAR only shows in `render_mode="human"`
 
 **4. Model not found**
-- Run `python train.py` first to create the model
+- Run `python scripts/train.py` first to create the model
 - Check `models/PPO/drone_pilot_final.zip` exists
+
+**5. Import errors after restructuring**
+- Make sure you're running scripts from the root directory
+- Verify `src/__init__.py` exists
 
 ## Performance Metrics 📊
 

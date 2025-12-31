@@ -1,7 +1,8 @@
 import numpy as np
 import gymnasium as gym
 from typing import Optional, Tuple, Dict, Any
-from lidar import Lidar
+from src.lidar import Lidar
+from src.renderer import Renderer
 
 
 class QuadroCopterEnv(gym.Env):
@@ -21,16 +22,12 @@ class QuadroCopterEnv(gym.Env):
     
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 30}
 
-    def __init__(self, size: int = 5, render_mode: Optional[str] = None,debug_mode: bool = False) -> None:
+    def __init__(self, size: int = 5, render_mode: Optional[str] = None, debug_mode: bool = False) -> None:
         self.size = size
         self.window_size = self.WINDOW_SIZE
-        self.window = None
-        self.clock = None
-        self.debug_mode = debug_mode
-        self.quadro_copter_image_original = None
-        self.target_image = None
         self.scale_factor = self.window_size / self.size
         self.render_mode = render_mode
+        self.debug_mode = debug_mode
         self.fuel = self.MAX_FUEL
         self.lidar = Lidar(max_range=3.0, num_rays=16, fov_angle=360)
         self.obstacles = []
@@ -38,6 +35,11 @@ class QuadroCopterEnv(gym.Env):
         self._agent_location = np.array([-1, -1], dtype=np.float32)
         self._target_location = np.array([-1, -1], dtype=np.float32)
         
+        # Initialize renderer only if needed
+        self.renderer = None
+        if render_mode == "human":
+            self.renderer = Renderer(self.window_size, self.scale_factor, self.metadata)
+        self.trail = []
         self._setup_spaces()
     
     def _generate_obstacles(self) -> list:
@@ -319,7 +321,9 @@ class QuadroCopterEnv(gym.Env):
     def step(self, action: np.ndarray) -> Tuple[Dict, float, bool, bool, Dict]:
         """Execute one step of the environment."""
         self.latest_action = action.copy()
-        
+        self.trail.append(self._agent_location.copy())
+        if len(self.trail) > 10: # keep last 10 positions
+            self.trail.pop(0)
         # Get current distance before movement
         prev_distance = np.linalg.norm(self._agent_location - self._target_location)
         
@@ -352,160 +356,40 @@ class QuadroCopterEnv(gym.Env):
         truncated = False
         reward = self._calculate_reward(terminated, hit_wall, prev_distance, curr_distance)
         
-        # Render if in human mode
+        # Update trail for visualization
         if self.render_mode == "human":
-            self.render()
+            self.trail.append(self._agent_location.copy())
+            if len(self.trail) > 100:  # Keep last 100 positions
+                self.trail.pop(0)
         
         return self._get_obs(), reward, terminated, truncated, self._get_info()
 
-    def _initialize_pygame(self) -> None:
-        """Initialize pygame window and clock."""
-        import pygame
-        
-        if self.window is None:
-            pygame.init()
-            pygame.display.set_caption("QuadroCopterEnv")
-            pygame.display.init()
-            self.window = pygame.display.set_mode((self.window_size, self.window_size))
-        
-        if self.clock is None:
-            self.clock = pygame.time.Clock()
-    
-    def _load_images(self) -> None:
-        """Load and scale game images."""
-        import pygame
-        
-        if self.quadro_copter_image_original is None:
-            self.quadro_copter_image_original = pygame.transform.scale(
-                pygame.image.load("images/quadro_copter.png").convert_alpha(),
-                (
-                    int(0.5 * self.scale_factor),
-                    int(0.5 * self.scale_factor),
-                ),
-            )
-        
-        if self.target_image is None:
-            self.target_image = pygame.transform.scale(
-                pygame.image.load("images/target.png").convert_alpha(),
-                (
-                    int(0.5 * self.scale_factor),
-                    int(0.5 * self.scale_factor),
-                ),
-            )
-    
-    def _draw_obstacles(self, canvas, pygame: Any) -> None:
-        """Draw obstacles on canvas."""
-        for obstacle in self.obstacles:
-            rectx = int(obstacle[0] * self.scale_factor)
-            recty = int(obstacle[1] * self.scale_factor)
-            rectw = int(obstacle[2] * self.scale_factor)
-            recth = int(obstacle[3] * self.scale_factor)
-            pygame.draw.rect(
-                canvas, (128, 128, 128), pygame.Rect(rectx, recty, rectw, recth)
-            )
-    
-    def _get_render_positions(self) -> Tuple[Tuple[int, int], Tuple[int, int]]:
-        """Calculate agent and target positions for rendering."""
-        agent_x = np.clip(
-            self._agent_location[0] * self.scale_factor,
-            0,
-            (self.size - 0.01) * self.scale_factor,
-        )
-        agent_y = np.clip(
-            self._agent_location[1] * self.scale_factor,
-            0,
-            (self.size - 0.01) * self.scale_factor,
-        )
-        target_x = np.clip(
-            self._target_location[0] * self.scale_factor,
-            0,
-            (self.size - 0.01) * self.scale_factor,
-        )
-        target_y = np.clip(
-            self._target_location[1] * self.scale_factor,
-            0,
-            (self.size - 0.01) * self.scale_factor,
-        )
-        
-        return (int(agent_x), int(agent_y)), (int(target_x), int(target_y))
-    
-    def _get_agent_rotation(self) -> float:
-        """Calculate agent rotation angle based on latest action."""
-        if np.linalg.norm(self.latest_action) > 0:
-            angle = np.arctan2(self.latest_action[1], self.latest_action[0])
-            return -np.degrees(angle)
-        return 0.0
-
     def render(self) -> None:
-        """Render the environment."""
-        if self.render_mode is None:
+        """Render the environment using the Renderer class."""
+        if self.render_mode != "human" or self.renderer is None:
             return
         
-        if self.render_mode == "human":
-            import pygame
-            
-            self._initialize_pygame()
-            self._load_images()
-            
-            canvas = pygame.Surface((self.window_size, self.window_size))
-            canvas.fill((255, 255, 255))
-            
-            self._draw_obstacles(canvas, pygame)
-            
-            agent_pos, target_pos = self._get_render_positions()
-            rotation = self._get_agent_rotation()
-
-            # Draw LIDAR rays (safely check if points exist)
-            if hasattr(self.lidar, 'last_scan_points') and self.lidar.last_scan_points:
-                for point in self.lidar.last_scan_points:
-                    pygame.draw.line(
-                        canvas, 
-                        (255, 0, 0), 
-                        agent_pos, 
-                        (
-                            int(point[0] * self.scale_factor), 
-                            int(point[1] * self.scale_factor)
-                        ), 
-                        1
-                    )
-            
-            # Draw agent (drone)
-            rotated_image = pygame.transform.rotate(
-                self.quadro_copter_image_original, rotation
-            )
-            canvas.blit(
-                rotated_image,
-                (
-                    agent_pos[0] - rotated_image.get_width() // 2,
-                    agent_pos[1] - rotated_image.get_height() // 2,
-                ),
-            )
-            
-            # Draw target
-            canvas.blit(
-                self.target_image,
-                (
-                    target_pos[0] - self.target_image.get_width() // 2,
-                    target_pos[1] - self.target_image.get_height() // 2,
-                ),
-            )
-
-            if self.debug_mode:
-                #draw hitbox around agent for debugging
-                agent_rect_pixel=pygame.Rect(
-                    agent_pos[0] - int(self.AGENT_HALF_SIZE * self.scale_factor),
-                    agent_pos[1] - int(self.AGENT_HALF_SIZE * self.scale_factor),
-                    int(self.AGENT_HALF_SIZE * 2 * self.scale_factor),
-                    int(self.AGENT_HALF_SIZE * 2 * self.scale_factor),
-                )
-                pygame.draw.rect(canvas, (0, 0, 255), agent_rect_pixel, 1)
-
-            #draw fuel bar
-            fuel_bar_width = int(200 * (self.fuel / self.MAX_FUEL))
-            pygame.draw.rect(canvas, (0, 255, 0), pygame.Rect(10, 10, fuel_bar_width, 20))
-            pygame.draw.rect(canvas, (0, 0, 0), pygame.Rect(10, 10, 200, 20), 2)
-            
-            self.window.blit(canvas, (0, 0))
-            pygame.event.pump()
-            pygame.display.update()
-            self.clock.tick(self.metadata["render_fps"])
+        # Get LIDAR scan points
+        lidar_points = []
+        if hasattr(self.lidar, 'last_scan_points'):
+            lidar_points = self.lidar.last_scan_points or []
+        
+        # Delegate rendering to Renderer
+        self.renderer.render(
+            agent_location=self._agent_location,
+            target_location=self._target_location,
+            obstacles=self.obstacles,
+            lidar_points=lidar_points,
+            latest_action=self.latest_action,
+            fuel=self.fuel,
+            max_fuel=self.MAX_FUEL,
+            size=self.size,
+            trail=self.trail,
+            debug_mode=self.debug_mode,
+            agent_half_size=self.AGENT_HALF_SIZE
+        )
+    
+    def close(self) -> None:
+        """Close the environment and cleanup renderer."""
+        if self.renderer is not None:
+            self.renderer.close()

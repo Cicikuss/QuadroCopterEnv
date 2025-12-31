@@ -1,12 +1,12 @@
 import gymnasium as gym
 from stable_baselines3 import PPO
-from drone_env import QuadroCopterEnv
+from src.drone_env import QuadroCopterEnv
 import numpy as np
 
 # Register environment
 gym.register(
     id="QuadroCopterEnv-v0",
-    entry_point="drone_env:QuadroCopterEnv",
+    entry_point="src.drone_env:QuadroCopterEnv",
 )
 
 def analyze_model():

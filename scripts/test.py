@@ -1,11 +1,11 @@
 import gymnasium as gym
 from stable_baselines3 import PPO
-from drone_env import QuadroCopterEnv
+from src.drone_env import QuadroCopterEnv
 
 # 1. Ortamı Kayıt Et
 gym.register(
     id="QuadroCopterEnv-v0",
-    entry_point="drone_env:QuadroCopterEnv",
+    entry_point="src.drone_env:QuadroCopterEnv",
 )
 
 def test():
@@ -31,7 +31,7 @@ def test():
         
         obs, reward, terminated, truncated, info = env.step(action)
         
-        # render() env içinde otomatik çağrılıyor ama garanti olsun
+        # Render manually (Gymnasium standard: separate from step())
         env.render()
 
         if terminated:

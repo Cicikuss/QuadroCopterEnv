@@ -1,4 +1,34 @@
-/venv
-/test_random.py
-/__pycache__
-/manual_control.py
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual Environment
+venv/
+ENV/
+env/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Models
+models/PPO/*.zip
+models/PPO/*.pkl
+
+# Logs
+*.log
+
+# Jupyter
+.ipynb_checkpoints
+
+# Development files
+manual_control.py
+/scripts/test_random.py
