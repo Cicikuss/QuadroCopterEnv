@@ -10,7 +10,7 @@ class QuadroCopterEnv(gym.Env):
     OBSTACLE_SIZE_MIN = 0.5
     OBSTACLE_SIZE_MAX = 1.5
     WINDOW_SIZE = 800
-    AGENT_HALF_SIZE = 0.25
+    AGENT_HALF_SIZE = 0.15
     TARGET_DISTANCE_THRESHOLD = 0.5
     COLLISION_REWARD = -100.0
     MAX_FUEL = 500  # Increased from 1000, but enough for 300 steps with efficiency bonus
@@ -21,11 +21,12 @@ class QuadroCopterEnv(gym.Env):
     
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 30}
 
-    def __init__(self, size: int = 5, render_mode: Optional[str] = None) -> None:
+    def __init__(self, size: int = 5, render_mode: Optional[str] = None,debug_mode: bool = False) -> None:
         self.size = size
         self.window_size = self.WINDOW_SIZE
         self.window = None
         self.clock = None
+        self.debug_mode = debug_mode
         self.quadro_copter_image_original = None
         self.target_image = None
         self.scale_factor = self.window_size / self.size
@@ -488,6 +489,16 @@ class QuadroCopterEnv(gym.Env):
                     target_pos[1] - self.target_image.get_height() // 2,
                 ),
             )
+
+            if self.debug_mode:
+                #draw hitbox around agent for debugging
+                agent_rect_pixel=pygame.Rect(
+                    agent_pos[0] - int(self.AGENT_HALF_SIZE * self.scale_factor),
+                    agent_pos[1] - int(self.AGENT_HALF_SIZE * self.scale_factor),
+                    int(self.AGENT_HALF_SIZE * 2 * self.scale_factor),
+                    int(self.AGENT_HALF_SIZE * 2 * self.scale_factor),
+                )
+                pygame.draw.rect(canvas, (0, 0, 255), agent_rect_pixel, 1)
 
             #draw fuel bar
             fuel_bar_width = int(200 * (self.fuel / self.MAX_FUEL))

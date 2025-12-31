@@ -19,7 +19,7 @@ def train():
     print("🚀 Eğitim Başlıyor... (Görsellik Kapalı - Hızlı Mod)")
 
     # 2. Ortamı Yarat (render_mode=None -> HIZ İÇİN ÖNEMLİ)
-    env = gym.make("QuadroCopterEnv-v0", size=5, render_mode=None)
+    env = gym.make("QuadroCopterEnv-v0", size=5, render_mode="human", debug_mode=True  )
     
     # 3. Zaman Sınırı Ekle (arttırıldı: engelleri dolaşması için daha fazla zamanı var)
     # 300 adım = target'a ulaşmak için yeterli, ama sonsuz loop'u engeller
